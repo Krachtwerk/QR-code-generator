@@ -118,6 +118,13 @@ input:focus,textarea:focus,select:focus{
 }
 .staal.eigen input{position:absolute;inset:0;opacity:0;cursor:pointer;border:0;padding:0}
 .staal.eigen svg{width:17px;height:17px;pointer-events:none}
+.ruitjes{
+  background-color:#FFF;
+  background-image:linear-gradient(45deg,#D8D8D0 25%,transparent 25%,transparent 75%,#D8D8D0 75%),
+                   linear-gradient(45deg,#D8D8D0 25%,transparent 25%,transparent 75%,#D8D8D0 75%);
+  background-size:16px 16px;background-position:0 0,8px 8px;
+}
+.staal.ruitjes{background-size:12px 12px;background-position:0 0,6px 6px}
 
 .kleurrij{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .kleurrij h4{font-size:13px;font-weight:550;color:var(--ink-zacht);margin:0 0 10px;letter-spacing:-.008em}
@@ -358,7 +365,7 @@ input:focus,textarea:focus,select:focus{
 
         <div class="melding waarschuwing" id="waarschuwing" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-let-op"/></svg>
-          <span>Weinig verschil tussen de twee kleuren. Deze code scant mogelijk niet. Test hem even met je telefoon.</span>
+          <span id="waarschuwing-tekst"></span>
         </div>
         <div class="melding fout" id="fout" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-let-op"/></svg>
@@ -466,6 +473,7 @@ var PALET = [
   ["#3C4B64","Donkerblauw"],["#E5C600","Geel"],["#83C8D6","Lichtblauw"],
   ["#ED6335","Oranje"],["#F2F2E9","Lichtgrijs"],["#FFFFFF","Wit"]
 ];
+var DOORZICHTIG = "none";   // sentinel voor een transparante achtergrond
 
 function lum(hex){
   var m = /^#?([\da-f]{6})$/i.exec(hex);
@@ -484,9 +492,12 @@ function contrast(a,b){
 var staat = { type:"link", vg:"#3C4B64", ag:"#FFFFFF", logo:true, size:1024 };
 
 function bouwStalen(gastheer, sleutel){
-  PALET.forEach(function(p){
+  var lijst = sleutel === "ag" ? PALET.concat([[DOORZICHTIG,"Transparant"]]) : PALET;
+  lijst.forEach(function(p){
     var b=document.createElement("button");
-    b.className="staal"; b.type="button"; b.style.background=p[0];
+    b.className = p[0] === DOORZICHTIG ? "staal ruitjes" : "staal";
+    b.type="button";
+    if(p[0] !== DOORZICHTIG) b.style.background=p[0];
     b.title=p[1]; b.setAttribute("aria-label",p[1]);
     b.dataset.hex=p[0];
     b.addEventListener("click",function(){ staat[sleutel]=p[0]; markeer(gastheer,p[0]); teken(); });
@@ -527,7 +538,7 @@ function renderSVG(tekst, o){
   var padX = lw/2 + 1.1, padY = lh/2 + 1.1;       // 1,1 module lucht rond het merk
 
   s.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+tot+' '+tot+'" width="'+tot+'" height="'+tot+'" shape-rendering="geometricPrecision">');
-  s.push('<rect width="'+tot+'" height="'+tot+'" fill="'+o.ag+'"/>');
+  if(o.ag !== DOORZICHTIG) s.push('<rect width="'+tot+'" height="'+tot+'" fill="'+o.ag+'"/>');
   s.push('<g fill="'+o.vg+'">');
 
   function inFinder(rr,cc){
@@ -555,8 +566,9 @@ function renderSVG(tekst, o){
   s.push('</g>');
 
   if(o.logo){
-    s.push('<rect x="'+(cx-padX)+'" y="'+(cy-padY)+'" width="'+(padX*2)+'" height="'+(padY*2)+
-           '" rx="'+(padX*0.55)+'" fill="'+o.ag+'"/>');
+    if(o.ag !== DOORZICHTIG)
+      s.push('<rect x="'+(cx-padX)+'" y="'+(cy-padY)+'" width="'+(padX*2)+'" height="'+(padY*2)+
+             '" rx="'+(padX*0.55)+'" fill="'+o.ag+'"/>');
     var k = lh/LOGO_VB[1];
     s.push('<g transform="translate('+(cx-lw/2)+' '+(cy-lh/2)+') scale('+k+')" fill="'+o.vg+'">'+
            '<path d="'+BEELDMERK+'"/></g>');
@@ -581,7 +593,9 @@ var huidigeSVG = "", timer = null;
 
 function teken(){
   var tekst = payloads[staat.type]();
-  $("podium").style.background = staat.ag;
+  var podium = $("podium");
+  podium.classList.toggle("ruitjes", staat.ag === DOORZICHTIG);
+  podium.style.background = staat.ag === DOORZICHTIG ? "" : staat.ag;
 
   if(!tekst){
     huidigeSVG = "";
@@ -605,12 +619,27 @@ function teken(){
   $("preview").innerHTML = huidigeSVG;
   $("fout").hidden = true;
   zetKnoppen(true);
-  $("waarschuwing").hidden = contrast(staat.vg, staat.ag) >= 3;
+  toonWaarschuwing();
 
   var p = $("podium");
   p.classList.remove("verversen");
   void p.offsetWidth;
   p.classList.add("verversen");
+}
+
+// Lege string = geen waarschuwing. Bij transparant kennen we de achtergrond niet, dus altijd testen.
+function contrastTekst(vg, ag){
+  if(ag === DOORZICHTIG)
+    return "Transparante achtergrond. Wij kunnen het contrast niet berekenen: zorg zelf voor een rustige, " +
+           "voldoende afstekende ondergrond en test de code met je telefoon.";
+  if(contrast(vg, ag) < 3)
+    return "Weinig verschil tussen de twee kleuren. Deze code scant mogelijk niet. Test hem even met je telefoon.";
+  return "";
+}
+function toonWaarschuwing(){
+  var t = contrastTekst(staat.vg, staat.ag);
+  $("waarschuwing-tekst").textContent = t;
+  $("waarschuwing").hidden = !t;
 }
 
 function toonFout(t){ $("fout-tekst").textContent = t; $("fout").hidden = false; }
@@ -628,8 +657,10 @@ function naarPNG(cb){
     var c = document.createElement("canvas");
     c.width = c.height = staat.size;
     var g = c.getContext("2d");
-    g.fillStyle = staat.ag;
-    g.fillRect(0,0,staat.size,staat.size);
+    if(staat.ag !== DOORZICHTIG){
+      g.fillStyle = staat.ag;
+      g.fillRect(0,0,staat.size,staat.size);
+    }
     g.drawImage(img,0,0,staat.size,staat.size);
     URL.revokeObjectURL(url);
     c.toBlob(cb,"image/png");
@@ -729,6 +760,12 @@ if(location.search.indexOf("selftest") > -1){
 
   var zonder = renderSVG("https://krachtwerk.nl", {vg:"#3C4B64", ag:"#FFFFFF", logo:false});
   check("zonder logo meer stippen", zonder.split("<circle").length > svg.split("<circle").length);
+
+  var trans = renderSVG("https://krachtwerk.nl", {vg:"#3C4B64", ag:DOORZICHTIG, logo:true});
+  check("transparant laat vlak en logo-uitsparing weg", trans.split("<rect").length === svg.split("<rect").length - 2);
+  check("transparant houdt stippen", trans.split("<circle").length === svg.split("<circle").length);
+  check("transparant waarschuwt altijd", contrastTekst("#3C4B64", DOORZICHTIG) !== "");
+  check("goed contrast waarschuwt niet", contrastTekst("#3C4B64", "#FFFFFF") === "");
 
   var q = qrcode(0,"H"); q.addData("héllo ünïcode","Byte"); q.make();
   check("utf-8 codeert zonder fout", q.getModuleCount() > 0);
